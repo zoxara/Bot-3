@@ -1,0 +1,71 @@
+name: Ultimate Auto-Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Extract, Setup & Build APK via Cordova
+        run: |
+          echo "Checking for zip files..."
+          UNZIP_FILE=$(find . -maxdepth 1 -name "*.zip" | head -n 1)
+          
+          mkdir -p raw_source
+          if [ -n "$UNZIP_FILE" ]; then
+            echo "Extracting $UNZIP_FILE..."
+            unzip -q "$UNZIP_FILE" -d raw_source
+          else
+            echo "No zip found, copying files..."
+            cp -r * raw_source/ 2>/dev/null || true
+          fi
+
+          npx cordova create my-app com.mql5.eastudio MQL5EAStudio
+          cd my-app
+
+          # Clear default cordova template files completely
+          rm -rf www/*
+
+          # Find and copy actual web assets into clean www folder
+          if [ -d "../raw_source" ]; then
+            FIRST_DIR=$(ls -d ../raw_source/*/ 2>/dev/null | grep -v 'node_modules/' | head -n 1)
+            if [ -n "$FIRST_DIR" ] && [ -d "$FIRST_DIR" ]; then
+              cp -r "$FIRST_DIR"* www/ 2>/dev/null || true
+            else
+              cp -r ../raw_source/* www/ 2>/dev/null || true
+            fi
+          fi
+
+          # Ensure index.html exists
+          if [ ! -f "www/index.html" ]; then
+            echo '<!DOCTYPE html><html><head><title>MQL5 EA Studio</title></head><body><h1>MQL5 EA Studio App</h1></body></html>' > www/index.html
+          fi
+
+          npx cordova platform add android --nosave || true
+          npx cordova build android --debug
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mql5-ea-studio-apk
+          path: |
+            **/build/outputs/apk/debug/*.apk
+            **/*.apk
+            
